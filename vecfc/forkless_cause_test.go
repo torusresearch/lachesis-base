@@ -482,6 +482,99 @@ func TestForklessCausedRandom(t *testing.T) {
 	}
 }
 
+// Test for the graph in https://raw.githubusercontent.com/wiki/Fantom-foundation/go-opera/images/roots1.png
+func TestForklessCausedWiki(t *testing.T) {
+	assertar := assert.New(t)
+
+	dagAscii := `
+ a000    
+ ║         ║        
+ ╠════════ b000    
+ ║         ║         ║        
+ ╠════════─╫─═══════ c000    
+ ║         ║         ║         ║        
+ ╠════════─╫─═══════─╫─═══════ d000    
+ ║         ║         ║         ║        
+ a001═════─╫─═══════─╫─════════╣        
+ ║         ║         ║         ║        
+ ║         b001═════─╫─════════╣        
+ ║         ║         ║         ║        
+ ║         ║         c001══════╣        
+ ║         ║         ║         ║        
+ a002═════─╫─════════╣         ║    
+ ║         ║         ║         ║        
+ ╠════════ b002      ║         ║        
+ ║         ║║        ║         ║        
+ ║         ║╚═══════─╫─═══════ d001    
+ ║         ║         ║         ║        
+ ║         ║         c002══════╣        
+ ║         ║         ║         ║        
+ a003═════─╫─════════╣         ║        
+ ║         ║         ║         ║        
+ ║         b003══════╣         ║        
+ ║         ║║        ║         ║        
+ ║         ║╚═══════─╫─═══════ d002    
+ ║         ║         ║         ║        
+ ║         ║         c003══════╣        
+ ║         ║         ║         ║        
+ ║         ║         ╠════════ d003    
+ ║         ║         ║         ║        
+ a004═════─╫─═══════─╫─════════╣        
+ ║         ║         ║         ║        
+ ╠════════ b004      ║         ║        
+ ║         ║         ║         ║        
+ ║         ╠════════ c004      ║        
+ ║         ║         ║         ║        
+ ║         ╠════════─╫─═══════ d004    
+ ║         ║         ║         ║        
+ a005═════─╫─═══════─╫─════════╣     
+`
+
+	ordered := make(dag.Events, 0)
+	nodes, _, named := tdag.ASCIIschemeForEach(dagAscii, tdag.ForEachEvent{
+		Process: func(e dag.Event, name string) {
+			ordered = append(ordered, e)
+		},
+	})
+
+	validators := pos.EqualWeightValidators(nodes, 1)
+
+	events := make(map[hash.Event]dag.Event)
+	getEvent := func(id hash.Event) dag.Event {
+		return events[id]
+	}
+
+	vi := NewIndex(tCrit, LiteConfig())
+	vi.Reset(validators, memorydb.New(), getEvent)
+
+	// push
+	for _, e := range ordered {
+		events[e.ID()] = e
+		err := vi.Add(e)
+		if err != nil {
+			panic(err)
+		}
+		vi.Flush()
+	}
+
+	// check
+	for e1name, e1 := range named {
+		for e2name, e2 := range named {
+			res := vi.ForklessCause(e1.ID(), e2.ID())
+			fmt.Println(fmt.Sprintf("forklessCause(%v,%v) = %v", e1name, e2name, res))
+
+			// TODO: add scenarios
+			if !assertar.Equal(
+				res,
+				res,
+				fmt.Sprintf("%s forkless sees %s", e1.ID(), e2.ID()),
+			) {
+				return
+			}
+		}
+	}
+}
+
 type eventSlot struct {
 	seq     idx.Event
 	creator idx.ValidatorID
